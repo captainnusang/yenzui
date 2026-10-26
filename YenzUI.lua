@@ -1216,7 +1216,7 @@ function Library:CreateWindow(cfg)
                 -- Collapse chevron
                 local chevron = New("TextLabel", {
                     Text = G._expanded and "▲" or "▼",
-                    Font = Enum.Font.GothamBold,
+                    Font = Enum.Font.GothamMedium,
                     TextSize = 13,
                     TextColor3 = T.TextMuted,
                     BackgroundTransparency = 1,
