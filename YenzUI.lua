@@ -327,7 +327,7 @@ function Library:CreateWindow(cfg)
         Parent=profileAvatar,
     }, {Corner(100)})
     local profileFallback = New("TextLabel", {
-        Text=string.sub(initialUser.DisplayName or initialUser.Name or "P",1,1):upper(),
+        Text=string.sub(initialUser.Name or "P",1,1):upper(),
         Font=F.Bold,TextSize=14,TextColor3=T.TextPrimary,
         BackgroundTransparency=1,Size=UDim2.fromScale(1,1),
         Parent=profileClip,
@@ -346,7 +346,7 @@ function Library:CreateWindow(cfg)
         BorderSizePixel=0,ZIndex=3,Parent=profileAvatar,
     }, {Corner(100),Stroke(T.InputBackground,0,1)})
     local profileDisplayName = New("TextLabel", {
-        Name="DisplayName",Text=initialUser.DisplayName,
+        Name="DisplayName",Text=initialUser.Name,
         Font=F.SemiBold,TextSize=11,TextColor3=T.TextPrimary,
         BackgroundTransparency=1,Size=UDim2.new(1,-60,0,16),
         Position=UDim2.fromOffset(50,6),TextXAlignment=Enum.TextXAlignment.Left,
@@ -519,7 +519,7 @@ function Library:CreateWindow(cfg)
         local image=view.Image
         if not image or not image.Parent then return end
         if view.LoadedConnection then Untrack(view.LoadedConnection);view.LoadedConnection=nil end
-        image.ImageTransparency=1
+        image.ImageTransparency=0
         image.Image=imageUrl
         if image.IsLoaded then
             showAvatar(view,version)
@@ -535,7 +535,7 @@ function Library:CreateWindow(cfg)
     local function updateAvatarViews()
         avatarVersion+=1
         local version=avatarVersion
-        local displayName=tostring(initialUser.DisplayName or initialUser.Name or "Player")
+        local displayName=tostring(initialUser.Name or "Player")
         local imageUrl=initialUser.Image
         local userId=tonumber(initialUser.UserId)
         local thumbnail="rbxthumb://type=AvatarBust&id="..tostring(userId or 0).."&w=150&h=150"
@@ -575,11 +575,11 @@ function Library:CreateWindow(cfg)
         initialUser.Name=tostring(user.Name or initialUser.Name or "Player")
         initialUser.DisplayName=tostring(user.DisplayName or initialUser.DisplayName or initialUser.Name)
         initialUser.Image=user.Image or initialUser.Image
-        profileDisplayName.Text=initialUser.DisplayName
+        profileDisplayName.Text=initialUser.Name
         profileName.Text="@"..initialUser.Name
-        for _,nameLabel in ipairs(initialUser.NameLabels or {}) do nameLabel.Text=initialUser.DisplayName end
+        for _,nameLabel in ipairs(initialUser.NameLabels or {}) do nameLabel.Text=initialUser.Name end
         for _,fallback in ipairs(initialUser.AvatarFallbacks or {}) do
-            fallback.Text=string.sub(initialUser.DisplayName,1,1):upper()
+            fallback.Text=string.sub(initialUser.Name,1,1):upper()
         end
         updateAvatarViews()
     end
@@ -1073,7 +1073,7 @@ function Library:CreateWindow(cfg)
                 }, {Corner(100)})
                 local fallback=New("TextLabel", {
                     Name="AvatarFallback",
-                    Text=string.sub(initialUser.DisplayName or initialUser.Name or "P",1,1):upper(),
+                    Text=string.sub(initialUser.Name or "P",1,1):upper(),
                     Font=F.Bold,TextSize=28,TextColor3=T.TextPrimary,
                     BackgroundTransparency=1,Size=UDim2.fromScale(1,1),ZIndex=4,Parent=avatarClip,
                 })
@@ -1094,7 +1094,7 @@ function Library:CreateWindow(cfg)
                     TextXAlignment=Enum.TextXAlignment.Left,ZIndex=2,Parent=banner,
                 })
                 local nameLabel=New("TextLabel", {
-                    Name="WelcomeDisplayName",Text=options.User or initialUser.DisplayName,
+                    Name="WelcomeDisplayName",Text=options.User or initialUser.Name,
                     Font=F.Bold,TextSize=20,TextColor3=T.TextPrimary,
                     BackgroundTransparency=1,Size=UDim2.new(1,-textX-14,0,27),
                     Position=UDim2.fromOffset(textX,29),TextXAlignment=Enum.TextXAlignment.Left,
@@ -1215,14 +1215,15 @@ function Library:CreateWindow(cfg)
                 end
                 -- Collapse chevron
                 local chevron = New("TextLabel", {
-                    Text = "▾",
-                    Font = F.Regular,
-                    TextSize = 11,
+                    Text = G._expanded and "▲" or "▼",
+                    Font = Enum.Font.GothamBold,
+                    TextSize = 13,
                     TextColor3 = T.TextMuted,
                     BackgroundTransparency = 1,
                     Size = UDim2.fromOffset(20,30),
                     Position = UDim2.new(1,-22,0,0),
                     TextXAlignment = Enum.TextXAlignment.Center,
+                    TextYAlignment = Enum.TextYAlignment.Center,
                     Parent = header,
                 })
 
@@ -1256,11 +1257,11 @@ function Library:CreateWindow(cfg)
                 header.MouseButton1Click:Connect(function()
                     G._expanded = not G._expanded
                     if G._expanded then
-                        chevron.Text = "▾"
+                        chevron.Text = "▲"
                         Tween(body, 0.16, {Size=UDim2.new(1,-8,0,_bodyHeight)})
                         Tween(card, 0.16, {Size=UDim2.new(1,0,0,30+_bodyHeight)})
                     else
-                        chevron.Text = "▸"
+                        chevron.Text = "▼"
                         Tween(body, 0.16, {Size=UDim2.new(1,-8,0,0)})
                         Tween(card, 0.16, {Size=UDim2.new(1,0,0,30)})
                     end
@@ -1482,9 +1483,9 @@ function Library:CreateWindow(cfg)
                         TextTruncate = Enum.TextTruncate.AtEnd,
                         Parent = box,
                     })
-                    New("TextLabel", {Text="▾",Font=F.Regular,TextSize=11,TextColor3=T.TextMuted,
-                        BackgroundTransparency=1,Size=UDim2.fromOffset(16,24),Position=UDim2.new(1,-16,0,0),
-                        TextXAlignment=Enum.TextXAlignment.Center,Parent=box})
+                    local arrow = New("TextLabel", {Name="DropdownArrow",Text="▼",Font=Enum.Font.GothamBold,TextSize=13,TextColor3=T.TextMuted,
+                        BackgroundTransparency=1,Size=UDim2.fromOffset(20,24),Position=UDim2.new(1,-20,0,0),
+                        TextXAlignment=Enum.TextXAlignment.Center,TextYAlignment=Enum.TextYAlignment.Center,Parent=box})
 
                     -- Popup
                     local popup = New("ScrollingFrame", {
@@ -1519,12 +1520,13 @@ function Library:CreateWindow(cfg)
                     end
                     function obj2:Close()
                         open2 = false
+                        arrow.Text = "▼"
                         Tween(popup, 0.12, {Size=UDim2.fromOffset(popup.AbsoluteSize.X,0)}).Completed:Connect(function()
                             if not open2 then popup.Visible=false end
                         end)
                     end
                     function obj2:Open()
-                        open2 = true; build2()
+                        open2 = true; arrow.Text = "▲"; build2()
                         local ap = box.AbsolutePosition
                         local rp = WindowRoot.AbsolutePosition
                         local vpH = workspace.CurrentCamera.ViewportSize.Y
