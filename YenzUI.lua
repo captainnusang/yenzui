@@ -135,7 +135,7 @@ end
 -- ==============================================================================
 --  SECTION 4 — LIBRARY TABLE
 -- ==============================================================================
-local Library = { Flags = {}, Icons = Icons, ToggleKey = Enum.KeyCode.Insert }
+local Library = { Theme = T, Flags = {}, Icons = Icons, ToggleKey = Enum.KeyCode.RightControl }
 Library.__index = Library
 
 -- ==============================================================================
@@ -445,7 +445,7 @@ function Library:CreateWindow(cfg)
         Parent = StatusFooter,
     })
     New("TextLabel", {
-        Text = "Insert · Show / Hide",
+        Text = "Right Control · Show / Hide",
         Font = F.Regular,
         TextSize = 10,
         TextColor3 = T.TextMuted,
@@ -615,7 +615,7 @@ function Library:CreateWindow(cfg)
 
     -- ── Visibility toggle (hotkey) ────────────────────────────────────────────
     Track(UserInputService.InputBegan:Connect(function(input, gp)
-        if gp then return end
+        if gp or UserInputService:GetFocusedTextBox() then return end
         if input.KeyCode == Library.ToggleKey then
             if Window._minimized then
                 Window._minimized = false; Window._uiVisible = true
@@ -1004,7 +1004,8 @@ function Library:CreateWindow(cfg)
                         TextXAlignment = Enum.TextXAlignment.Left,
                         Parent = r,
                     })
-                    local valLabel = New("TextLabel", {
+                    local valLabel = New("TextBox", {
+                        ClearTextOnFocus = false,
                         Text = tostring(val)..suffix,
                         Font = F.Medium,
                         TextSize = 12,
@@ -1038,12 +1039,24 @@ function Library:CreateWindow(cfg)
                         Parent = trackBg,
                     }, {Corner(100)})
                     local obj = {}
+                    local initialized = false
                     function obj:Set(v, instant)
+                        v = tonumber(v)
+                        if not v or v ~= v or math.abs(v) == math.huge then
+                            valLabel.Text = tostring(val)..suffix
+                            return
+                        end
                         v = math.clamp(v, min, max)
                         if not o.Decimals then v = math.floor(v+0.5)
                         else v = math.floor(v*10^o.Decimals+.5)/10^o.Decimals end
+                        local changed = val ~= v
+                        if initialized and not changed then
+                            if valLabel.Text ~= tostring(v)..suffix then valLabel.Text = tostring(v)..suffix end
+                            return
+                        end
+                        initialized = true
                         val = v
-                        local p = (v-min)/(max-min)
+                        local p = max > min and (v-min)/(max-min) or 0
                         local t2 = instant and 0 or 0.1
                         Tween(fill, t2, {Size=UDim2.new(p,0,1,0)})
                         Tween(grab, t2, {Position=UDim2.new(p,0,0.5,0)})
@@ -1052,6 +1065,12 @@ function Library:CreateWindow(cfg)
                         if o.Callback then task.spawn(o.Callback, v) end
                     end
                     function obj:Get() return val end
+                    valLabel.FocusLost:Connect(function()
+                        local text = valLabel.Text:match("^%s*(.-)%s*$")
+                        if suffix ~= "" and text:sub(-#suffix) == suffix then text = text:sub(1, -#suffix-1) end
+                        obj:Set(tonumber(text))
+                    end)
+                    obj.Input = valLabel
                     local sliding = false
                     local function updateSlider(x)
                         local bx = trackBg.AbsolutePosition.X
@@ -1515,6 +1534,304 @@ function Library:CreateWindow(cfg)
                     return obj4
                 end
                 G.AddChipBar = G.AddChips  -- alias
+
+                -- AddPriorityList (ordered, enabled skill list)
+                function G:AddPriorityList(o)
+                    assert(type(o) == "table", "AddPriorityList expects an options table")
+                    local sourceItems = type(o.Items) == "table" and o.Items or {}
+                    local items = {}
+                    local rowById = {}
+                    local dragState = nil
+                    local settleTween = nil
+                    local itemCount = 0
+                    local widget = {}
+                    local container = New("Frame", {
+                        Name = "PriorityList_" .. tostring(o.Name or "Items"),
+                        Size = UDim2.new(1,0,0,0),
+                        BackgroundTransparency = 1,
+                        AutomaticSize = Enum.AutomaticSize.Y,
+                        Parent = bodyList,
+                    }, {ListLayout(4)})
+                    local title = New("TextLabel", {
+                        Name = "PriorityListTitle",
+                        Text = tostring(o.Name or "Priority"),
+                        Font = F.SemiBold,
+                        TextSize = 11,
+                        TextColor3 = T.TextPrimary,
+                        TextXAlignment = Enum.TextXAlignment.Left,
+                        BackgroundTransparency = 1,
+                        Size = UDim2.new(1,0,0,18),
+                        LayoutOrder = 1,
+                        Parent = container,
+                    })
+                    local list = New("Frame", {
+                        Name = "PriorityRows",
+                        Size = UDim2.new(1,0,0,0),
+                        BackgroundTransparency = 1,
+                        AutomaticSize = Enum.AutomaticSize.Y,
+                        LayoutOrder = 2,
+                        Parent = container,
+                    }, {ListLayout(4)})
+                    local dropLine = New("Frame", {
+                        Name = "PriorityDropIndicator",
+                        Size = UDim2.new(1,-8,0,2),
+                        BackgroundColor3 = T.AccentBright,
+                        BorderSizePixel = 0,
+                        Visible = false,
+                        ZIndex = 101,
+                        Parent = OverlayLayer,
+                    }, {Corner(2)})
+                    local ghost = New("TextLabel", {
+                        Name = "PriorityDragGhost",
+                        Size = UDim2.fromOffset(190,24),
+                        BackgroundColor3 = T.CardHeader,
+                        BackgroundTransparency = 0.08,
+                        BorderSizePixel = 0,
+                        Text = "",
+                        TextColor3 = T.TextPrimary,
+                        TextSize = 10,
+                        Font = F.Medium,
+                        TextXAlignment = Enum.TextXAlignment.Left,
+                        Visible = false,
+                        ZIndex = 101,
+                        Parent = OverlayLayer,
+                    }, {Corner(4), Stroke(T.Accent,0,1)})
+                    local function snapshot()
+                        local result = {}
+                        for index, item in ipairs(items) do
+                            result[index] = {id=item.Id, enabled=item.Enabled}
+                        end
+                        return result
+                    end
+                    local function writeFlag(notify)
+                        local value = snapshot()
+                        if o.Flag then Library.Flags[o.Flag] = value end
+                        if notify and type(o.Callback) == "function" then
+                            task.spawn(function()
+                                local ok, err = pcall(o.Callback, value)
+                                if not ok then warn("[YenzUI] AddPriorityList callback failed: " .. tostring(err)) end
+                            end)
+                        end
+                    end
+                    local function disconnectRow(rowData)
+                        for _, conn in ipairs(rowData.Connections) do
+                            pcall(function() conn:Disconnect() end)
+                            for index = #_allConnections, 1, -1 do
+                                if _allConnections[index] == conn then
+                                    table.remove(_allConnections,index)
+                                    break
+                                end
+                            end
+                        end
+                        rowData.Connections = {}
+                    end
+                    local function connectRow(rowData, signal, callback)
+                        local conn = Track(signal:Connect(callback))
+                        rowData.Connections[#rowData.Connections+1] = conn
+                    end
+                    local function findDropIndex(screenY)
+                        for index, item in ipairs(items) do
+                            local rowData = rowById[item.Id]
+                            if rowData and screenY < rowData.Frame.AbsolutePosition.Y + rowData.Frame.AbsoluteSize.Y * 0.5 then
+                                return index
+                            end
+                        end
+                        return #items + 1
+                    end
+                    local function setDragPosition(screenX, screenY)
+                        if not dragState then return end
+                        local rootPos = WindowRoot.AbsolutePosition
+                        ghost.Position = UDim2.fromOffset(screenX-rootPos.X+8, screenY-rootPos.Y+10)
+                        local index = findDropIndex(screenY)
+                        local targetY
+                        if index <= #items then
+                            local target = rowById[items[index].Id]
+                            targetY = target and target.Frame.AbsolutePosition.Y or list.AbsolutePosition.Y
+                        else
+                            targetY = list.AbsolutePosition.Y + list.AbsoluteSize.Y
+                        end
+                        dropLine.Position = UDim2.fromOffset(list.AbsolutePosition.X-rootPos.X+4, targetY-rootPos.Y-1)
+                    end
+                    local function finishDrag(screenY)
+                        if not dragState then return end
+                        local oldIndex = dragState.Index
+                        local moved = table.remove(items, oldIndex)
+                        local newIndex = findDropIndex(screenY)
+                        if newIndex > oldIndex then newIndex -= 1 end
+                        newIndex = math.clamp(newIndex,1,#items+1)
+                        table.insert(items,newIndex,moved)
+                        for index, item in ipairs(items) do rowById[item.Id].Frame.LayoutOrder = index end
+                        dropLine.Visible = false
+                        local targetRow = rowById[moved.Id]
+                        if settleTween then pcall(function() settleTween:Cancel() end) end
+                        if targetRow then
+                            local rootPos = WindowRoot.AbsolutePosition
+                            settleTween = Tween(ghost,0.13,{
+                                Position=UDim2.fromOffset(targetRow.Frame.AbsolutePosition.X-rootPos.X,targetRow.Frame.AbsolutePosition.Y-rootPos.Y),
+                                BackgroundTransparency=1,
+                                TextTransparency=1,
+                            })
+                            if settleTween then
+                                local settlingTween=settleTween
+                                local completedConn
+                                local cancelHandle={Disconnect=function() pcall(function() settlingTween:Cancel() end) end}
+                                Track(cancelHandle)
+                                completedConn=settlingTween.Completed:Connect(function()
+                                    if settleTween==settlingTween then
+                                        ghost.Visible=false
+                                        ghost.BackgroundTransparency=0.08
+                                        ghost.TextTransparency=0
+                                        settleTween=nil
+                                    end
+                                    for index=#_allConnections,1,-1 do
+                                        if _allConnections[index]==completedConn or _allConnections[index]==cancelHandle then
+                                            table.remove(_allConnections,index)
+                                        end
+                                    end
+                                    completedConn:Disconnect()
+                                end)
+                                Track(completedConn)
+                            else
+                                ghost.Visible=false
+                            end
+                        else
+                            ghost.Visible=false
+                        end
+                        dragState = nil
+                        writeFlag(true)
+                    end
+                    local function createRow(item, order)
+                        local frame = New("Frame", {
+                            Name = "PriorityItem_" .. item.Id,
+                            Size = UDim2.new(1,0,0,26),
+                            BackgroundColor3 = T.InputBackground,
+                            BorderSizePixel = 0,
+                            LayoutOrder = order,
+                            Parent = list,
+                        }, {Corner(4),Stroke(T.Divider,0,1)})
+                        local rowData = {Frame=frame, Connections={}}
+                        local handle = New("TextButton", {
+                            Name="DragHandle", Text="⠿", Font=F.Regular, TextSize=14,
+                            TextColor3=T.TextMuted, BackgroundTransparency=1,
+                            AutoButtonColor=false, Size=UDim2.fromOffset(27,26),
+                            Parent=frame,
+                        })
+                        local label = New("TextLabel", {
+                            Name="ItemName", Text=item.Name, Font=F.Medium, TextSize=10,
+                            TextColor3=T.TextSecondary, BackgroundTransparency=1,
+                            Position=UDim2.fromOffset(29,0), Size=UDim2.new(1,-65,1,0),
+                            TextXAlignment=Enum.TextXAlignment.Left,
+                            TextTruncate=Enum.TextTruncate.AtEnd, Parent=frame,
+                        })
+                        local toggle = New("TextButton", {
+                            Name="Enabled", Text=item.Enabled and "✓" or "", Font=F.Bold,
+                            TextSize=9, TextColor3=T.WindowBackground,
+                            BackgroundColor3=item.Enabled and T.Accent or T.InputBackground,
+                            AutoButtonColor=false, Size=UDim2.fromOffset(12,12),
+                            Position=UDim2.new(1,-22,0.5,-6), Parent=frame,
+                        }, {Corner(3),Stroke(item.Enabled and T.Accent or T.Divider,0,1)})
+                        connectRow(rowData,handle.InputBegan,function(input)
+                            if input.UserInputType~=Enum.UserInputType.MouseButton1 and input.UserInputType~=Enum.UserInputType.Touch then return end
+                            local currentIndex,currentItem
+                            for index,candidate in ipairs(items) do if candidate.Id==item.Id then currentIndex=index;currentItem=candidate;break end end
+                            if not currentIndex then return end
+                            if settleTween then
+                                local previousTween=settleTween
+                                settleTween=nil
+                                pcall(function() previousTween:Cancel() end)
+                            end
+                            dragState={Id=item.Id,Index=currentIndex,Input=input,InputType=input.UserInputType}
+                            ghost.Text="  ⠿  "..currentItem.Name
+                            ghost.BackgroundTransparency=0.08
+                            ghost.TextTransparency=0
+                            ghost.Visible=true
+                            dropLine.Visible=true
+                            setDragPosition(input.Position.X,input.Position.Y)
+                        end)
+                        connectRow(rowData,toggle.Activated,function()
+                            local current
+                            for _,candidate in ipairs(items) do if candidate.Id==item.Id then current=candidate;break end end
+                            if not current then return end
+                            current.Enabled=not current.Enabled
+                            toggle.Text=current.Enabled and "✓" or ""
+                            toggle.BackgroundColor3=current.Enabled and T.Accent or T.InputBackground
+                            local stroke=toggle:FindFirstChildOfClass("UIStroke")
+                            if stroke then stroke.Color=current.Enabled and T.Accent or T.Divider end
+                            writeFlag(true)
+                        end)
+                        connectRow(rowData,frame.MouseEnter,function() if not dragState then Tween(frame,0.12,{BackgroundColor3=T.HoverSurface}) end end)
+                        connectRow(rowData,frame.MouseLeave,function() if not dragState then Tween(frame,0.12,{BackgroundColor3=T.InputBackground}) end end)
+                        return rowData
+                    end
+                    local function normalize(inputItems)
+                        local normalized, seen = {}, {}
+                        for _, entry in ipairs(inputItems) do
+                            if type(entry)=="table" and entry.Id~=nil then
+                                local id=tostring(entry.Id)
+                                if id~="" and not seen[id] then
+                                    seen[id]=true
+                                    normalized[#normalized+1]={Id=id,Name=tostring(entry.Name or id),Enabled=entry.Enabled==true}
+                                end
+                            end
+                        end
+                        return normalized
+                    end
+                    local function renderRows()
+                        local wanted={}
+                        for index,item in ipairs(items) do
+                            wanted[item.Id]=true
+                            local rowData=rowById[item.Id]
+                            if not rowData then
+                                rowData=createRow(item,index)
+                                rowById[item.Id]=rowData
+                            else
+                                rowData.Frame.LayoutOrder=index
+                                rowData.Frame.Name="PriorityItem_"..item.Id
+                                rowData.Frame:FindFirstChild("ItemName").Text=item.Name
+                                local toggle=rowData.Frame:FindFirstChild("Enabled")
+                                toggle.Text=item.Enabled and "✓" or ""
+                                toggle.BackgroundColor3=item.Enabled and T.Accent or T.InputBackground
+                                local stroke=toggle:FindFirstChildOfClass("UIStroke")
+                                if stroke then stroke.Color=item.Enabled and T.Accent or T.Divider end
+                            end
+                        end
+                        for id,rowData in pairs(rowById) do
+                            if not wanted[id] then
+                                if dragState and dragState.Id==id then dragState=nil;ghost.Visible=false;dropLine.Visible=false end
+                                disconnectRow(rowData)
+                                rowData.Frame:Destroy()
+                                rowById[id]=nil
+                            end
+                        end
+                    end
+                    Track(UserInputService.InputChanged:Connect(function(input)
+                        if dragState and (input.UserInputType==Enum.UserInputType.MouseMovement or (dragState.InputType==Enum.UserInputType.Touch and input==dragState.Input)) then
+                            setDragPosition(input.Position.X,input.Position.Y)
+                        end
+                    end))
+                    -- One widget-owned release handler serves every current and future row.
+                    Track(UserInputService.InputEnded:Connect(function(input)
+                        if dragState and ((dragState.InputType==Enum.UserInputType.MouseButton1 and input.UserInputType==Enum.UserInputType.MouseButton1) or (dragState.InputType==Enum.UserInputType.Touch and input==dragState.Input)) then
+                            finishDrag(input.Position.Y)
+                        end
+                    end))
+                    function widget:SetItems(newItems)
+                        assert(type(newItems)=="table","SetItems expects an array")
+                        if dragState then dragState=nil;ghost.Visible=false;dropLine.Visible=false end
+                        items=normalize(newItems)
+                        itemCount=#items
+                        renderRows()
+                        writeFlag(false)
+                    end
+                    function widget:GetItems()
+                        local result={}
+                        for index,item in ipairs(items) do result[index]={Id=item.Id,Name=item.Name,Enabled=item.Enabled} end
+                        return result
+                    end
+                    widget:SetItems(sourceItems)
+                    writeFlag(false)
+                    return widget
+                end
 
                 G._bodyList = bodyList
                 return G
