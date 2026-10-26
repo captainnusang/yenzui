@@ -525,7 +525,7 @@ function Library:CreateWindow(cfg)
             showAvatar(view,version)
         else
             local connection
-            connection=image.Loaded:Connect(function()
+            connection=image:GetPropertyChangedSignal("IsLoaded"):Connect(function()
                 showAvatar(view,version)
             end)
             view.LoadedConnection=Track(connection)
@@ -1634,7 +1634,7 @@ function Library:CreateWindow(cfg)
                     for _,option in ipairs(buttons) do
                         local title=tostring(option.Name or "Button")
                         local width=math.max(58,#title*5+18)
-                        local base=option.Danger and T.InputBackground or T.HoverSurface
+                        local base=T.InputBackground
                         local button=New("TextButton", {
                             Text=title,Font=F.SemiBold,TextSize=10,
                             TextColor3=option.Danger and T.Danger or T.TextPrimary,
